@@ -33,11 +33,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          token: ${{ secrets.DEMO_PUSH_TOKEN }}
+          token: ${{ secrets.DEMO_PUSH_TOKEN || github.token }}
 
       - name: Pick today's dependency and open a PR
         env:
-          GH_TOKEN: ${{ secrets.DEMO_PUSH_TOKEN }}
+          GH_TOKEN: ${{ secrets.DEMO_PUSH_TOKEN || github.token }}
         run: |
           set -euo pipefail
 
