@@ -1,0 +1,43 @@
+# Item 2: keep GitHub App full scans fresh.
+#
+# The Socket GitHub App creates a full scan on exactly one event trigger:
+# a push to the DEFAULT branch (check_suite webhook, gated on
+# head_branch == default_branch). No manifest change is required -- every
+# qualifying push creates a new full_scans row even when the SBOM tar hash
+# is identical. Socket's own scheduled re-scan is ~7 days on paid plans,
+# which is far too slow for a demo org.
+#
+# Pushing with a PAT rather than GITHUB_TOKEN so there is no question about
+# GitHub suppressing downstream events for token-authored commits.
+name: socket-heartbeat
+
+on:
+  schedule:
+    - cron: '17 */4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: socket-heartbeat
+  cancel-in-progress: false
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.DEMO_PUSH_TOKEN }}
+          fetch-depth: 0
+
+      - name: Bump heartbeat and push to default branch
+        run: |
+          set -euo pipefail
+          git config user.name  "contoso-ci"
+          git config user.email "ci@contoso-eng.invalid"
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > .socket-heartbeat
+          git add .socket-heartbeat
+          git commit -m "chore: scan heartbeat $(date -u +%H:%M)"
+          git push origin HEAD:main

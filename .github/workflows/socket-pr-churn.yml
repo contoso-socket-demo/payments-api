@@ -1,0 +1,72 @@
+# Item 7: guarantee a fresh Socket PR comment every day.
+#
+# Two separate comments exist and they have DIFFERENT gates:
+#   * alert comment    -> requires NEW alerts vs the base branch
+#   * overview comment -> requires a DIRECT dependency to change
+# Transitive-only churn (a lockfile pin bump with package.json untouched)
+# posts NEITHER comment, by design. So this workflow edits package.json.
+#
+# main stays on clean versions. Each run opens a PR that DOWNGRADES one
+# direct dependency to a version carrying real alerts, each verified
+# against the Socket API before being put in this list:
+#   minimist     1.2.8  -> 1.2.5     0 alerts -> 1 CRITICAL CVE  (cleanest delta)
+#   jsonwebtoken 9.0.2  -> 8.5.1     1 low    -> 1 high + 2 medium CVE
+#   lodash       4.17.21 -> 4.17.20  8 alerts -> 10 (adds a medium CVE)
+#
+# PRs are never merged, so the base never drifts and the shape repeats
+# indefinitely. Rotating the package avoids an identical bot comment, which
+# Socket de-duplicates to a noop.
+name: socket-pr-churn
+
+on:
+  schedule:
+    - cron: '35 13 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  churn:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.DEMO_PUSH_TOKEN }}
+
+      - name: Pick today's dependency and open a PR
+        env:
+          GH_TOKEN: ${{ secrets.DEMO_PUSH_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          NAMES=(minimist jsonwebtoken lodash)
+          VULN=(1.2.5 8.5.1 4.17.20)
+          NOTE=("1 critical CVE (CVE-2021-44906, prototype pollution)" "1 high plus 2 medium CVEs (CVE-2022-23529 and siblings)" "a medium CVE (CVE-2021-23337, command injection)")
+
+          I=$(( 10#$(date -u +%j) % 3 ))   # 10# is REQUIRED: %j zero-pads and bash reads 045 as octal, 089 as a fatal error
+          PKG="${NAMES[$I]}"
+          TO="${VULN[$I]}"
+          WHY="${NOTE[$I]}"
+          BRANCH="deps/${PKG}-${TO}-$(date -u +%Y%m%d)"
+
+          git config user.name  "contoso-ci"
+          git config user.email "ci@contoso-eng.invalid"
+          git checkout -b "$BRANCH"
+
+          npm pkg set "dependencies.${PKG}=${TO}"
+          git diff --stat
+
+          git add package.json
+          git commit -m "deps: pin ${PKG} to ${TO}"
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --base main --head "$BRANCH" \
+            --title "deps: pin ${PKG} to ${TO}" \
+            --body "Vendor compatibility matrix requires ${PKG}@${TO} for the settlement batch job.
+
+          Expected Socket result: ${WHY}.
+
+          This is a direct dependency change, so both the alert comment and the dependency overview comment should post."

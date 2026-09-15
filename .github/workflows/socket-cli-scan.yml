@@ -1,0 +1,31 @@
+# Item 3: CLI scans, WITHOUT --reach.
+# The paired --reach (Tier 1) run lives in checkout-service and data-pipeline,
+# where there is real call-graph depth for Coana to analyse.
+name: socket-cli-scan
+
+on:
+  schedule:
+    - cron: '05 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+
+      - run: npm install -g socket
+
+      - name: socket scan create (no reachability)
+        env:
+          SOCKET_SECURITY_API_TOKEN: ${{ secrets.SOCKET_SECURITY_API_TOKEN }}
+        run: |
+          socket scan create \
+            --org contoso \
+            --repo payments-api \
+            --branch main \
+            --commit-hash "$GITHUB_SHA" \
+            --no-interactive \
+            .
